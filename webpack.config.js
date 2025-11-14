@@ -1,41 +1,67 @@
 //@ts-check
 
-'use strict';
+import { resolve as _resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import TerserPlugin from 'terser-webpack-plugin'
 
-const path = require('path');
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 /**@type {import('webpack').Configuration}*/
 const config = {
-  target: 'node', // vscode extensions run in a Node.js-context 📖 -> https://webpack.js.org/configuration/node/
+        target: 'node',
 
-  entry: './src/extension.ts', // the entry point of this extension, 📖 -> https://webpack.js.org/configuration/entry-context/
-  output: {
-    // the bundle is stored in the 'dist' folder (check package.json), 📖 -> https://webpack.js.org/configuration/output/
-    path: path.resolve(__dirname, 'dist'),
-    filename: 'extension.js',
-    libraryTarget: 'commonjs2',
-    devtoolModuleFilenameTemplate: '../[resource-path]'
-  },
-  devtool: 'source-map',
-  externals: {
-    vscode: 'commonjs vscode' // the vscode-module is created on-the-fly and must be excluded. Add other modules that cannot be webpack'ed, 📖 -> https://webpack.js.org/configuration/externals/
-  },
-  resolve: {
-    // support reading TypeScript and JavaScript files, 📖 -> https://github.com/TypeStrong/ts-loader
-    extensions: ['.ts', '.js']
-  },
-  module: {
-    rules: [
-      {
-        test: /\.ts$/,
-        exclude: /node_modules/,
-        use: [
-          {
-            loader: 'ts-loader'
-          }
-        ]
-      }
-    ]
-  }
-};
-module.exports = config;
+        entry: './src/extension.ts',
+        output: {
+                path: _resolve(__dirname, 'dist'),
+                filename: 'extension.js',
+                libraryTarget: 'commonjs2',
+                devtoolModuleFilenameTemplate: '../[resource-path]',
+        },
+        devtool: 'source-map',
+        externals: {
+                vscode: 'commonjs vscode',
+        },
+        resolve: {
+                extensions: ['.ts', '.js'],
+        },
+        module: {
+                rules: [
+                        {
+                                test: /\.ts$/,
+                                exclude: /node_modules/,
+                                use: [
+                                        {
+                                                loader: 'ts-loader',
+                                        },
+                                ],
+                        },
+                ],
+        },
+        optimization: {
+                minimize: true,
+                minimizer: [
+                        new TerserPlugin({
+                                terserOptions: {
+                                        compress: {
+                                                drop_console: true,
+                                                drop_debugger: true,
+                                                pure_funcs: [
+                                                        'console.log',
+                                                        'console.info',
+                                                        'console.debug',
+                                                ],
+                                                passes: 2,
+                                                unsafe_arrows: true,
+                                                unsafe_methods: true,
+                                                unsafe_proto: true,
+                                        },
+                                        format: {
+                                                beautify: false,
+                                                ecma: 2020,
+                                        },
+                                },
+                        }),
+                ],
+        },
+}
+export default config
