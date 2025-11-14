@@ -1,0 +1,121 @@
+name: CI/CD - Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Trigger on version tags like v1.2.0
+  workflow_dispatch:  # Allow manual trigger
+    inputs:
+      version_type:
+        description: 'Version bump type (patch/minor/major)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+jobs:
+  build:
+    name: Build Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run tests
+        run: bun test
+
+      - name: Build extension
+        run: bun run vscode:prepublish
+
+      - name: Package extension
+        run: bunx vsce package --out dist/vscode-react-refactor.vsix
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-package
+          path: dist/vscode-react-refactor.vsix
+          retention-days: 30
+
+  publish-vscode:
+    name: Publish to VS Code Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build extension
+        run: bun run vscode:prepublish
+
+      - name: Publish to VS Code Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          if [ -z "$VSCE_PAT" ]; then
+            echo "Warning: VSCE_PAT secret not set. Skipping VS Code Marketplace publishing."
+            exit 0
+          fi
+          bunx vsce publish --pat $VSCE_PAT
+
+  publish-eclipse:
+    name: Publish to Eclipse Marketplace
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: extension-package
+          path: dist/
+
+      - name: Prepare Eclipse Marketplace upload
+        run: |
+          echo "## Eclipse Marketplace Upload" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The extension package has been created and attached to this release." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To publish to Eclipse Marketplace:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the \`.vsix\` file from the release artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "2. Visit [Eclipse Marketplace](https://marketplace.eclipse.org/)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Upload the extension package manually" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Note**: VS Code extensions may need to be converted to Eclipse plugin format for Eclipse Marketplace." >> $GITHUB_STEP_SUMMARY
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: dist/vscode-react-refactor.vsix
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
