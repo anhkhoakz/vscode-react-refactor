@@ -1,3 +1,5 @@
+# React Refactor
+
 This simple extension provides JSX refactor code actions for React developers.
 
 ## Features
@@ -12,17 +14,13 @@ This simple extension provides JSX refactor code actions for React developers.
 
 ![preview](assets/images/preview.gif)
 
-## 1.1.0 Update
+## Change Log
 
-- Added `Extract to Class Component` Code action
-- Added option to config Custom Babel plugins used by parser
-- Added option to choose generated function type
-- Added error message on parse error
-- Updated @babel modules to the latest version
-- Removed `Extract to File` Code action for now (due to VSCode changes), workaround is to call manually `Move to new file` on the newly created Component
-- Updated vscode to the latest and migrated extension to webpack
+Refer to [CHANGELOG](CHANGELOG.md)
 
 ## Help to debug
+
+w
 
 ### Code Action doesn't appear when select JSX code
 
@@ -44,8 +42,6 @@ This extension uses GitHub Actions for automated building and publishing:
 - **Build**: Automatically builds and tests on every push/PR
 - **Publish**: Automatically publishes to VS Code Marketplace when version tags are pushed
 - **Releases**: Creates GitHub releases with packaged extension for Eclipse Marketplace
-
-See [.github/CICD_SETUP.md](.github/CICD_SETUP.md) for detailed setup instructions.
 
 ### Quick Publish Guide
 
