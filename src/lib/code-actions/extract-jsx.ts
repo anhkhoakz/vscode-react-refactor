@@ -22,7 +22,7 @@ import {
         generateArrowFunctionComponent,
         generateClassComponent,
         generateFunctionalComponent,
-} from '../utils'
+} from '../../utils'
 
 /**
  * Extract code to new React component
@@ -30,13 +30,21 @@ import {
  */
 export const extractToComponent = async (produceClass: boolean = false) => {
         const editor = vscode.window.activeTextEditor
+        if (!editor) {
+                return
+        }
         try {
                 await extractAndReplaceSelection(editor, produceClass)
                 await executeFormatCommand()
                 resetSelection(editor)
         } catch (error) {
-                if (isDebugEnabled())
-                        vscode.window.showErrorMessage(error.message)
+                if (isDebugEnabled()) {
+                        const errorMessage =
+                                error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                        vscode.window.showErrorMessage(errorMessage)
+                }
         }
 }
 
@@ -56,6 +64,9 @@ const pickBy = (
  */
 export const extractToFile = async () => {
         const editor = vscode.window.activeTextEditor
+        if (!editor) {
+                return
+        }
 
         try {
                 const result = await extractAndReplaceSelection(editor, true)
@@ -73,7 +84,10 @@ export const extractToFile = async () => {
                                 await vscode.workspace.openTextDocument(uri)
                         await vscode.window.showTextDocument(document)
                         await executeFormatCommand()
-                        ensureReactIsImported(vscode.window.activeTextEditor)
+                        const activeEditor = vscode.window.activeTextEditor
+                        if (activeEditor) {
+                                ensureReactIsImported(activeEditor)
+                        }
                 })
 
                 const insertPos = document.positionAt(result.insertAt)
@@ -85,8 +99,13 @@ export const extractToFile = async () => {
 
                 await executeMoveToNewFileCodeAction(editor.document, selection)
         } catch (error) {
-                if (isDebugEnabled())
-                        vscode.window.showErrorMessage(error.message)
+                if (isDebugEnabled()) {
+                        const errorMessage =
+                                error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                        vscode.window.showErrorMessage(errorMessage)
+                }
         }
 }
 
@@ -120,13 +139,9 @@ const extractAndReplaceSelection = async (
         editor: vscode.TextEditor,
         produceClass: boolean = false,
 ): Promise<RefactorResult> => {
-        if (!editor) {
-                return
-        }
-
         const name = await askForName()
         if (!name) {
-                return
+                throw new Error('Component name is required')
         }
 
         const document = editor.document
@@ -195,7 +210,7 @@ const executeMoveToNewFileCodeAction = async (
 const getIndexesForSelection = (
         documentText: string,
         selectionOrRange: vscode.Selection,
-): number[] => {
+): [number, number] => {
         const lines = new LinesAndColumns(documentText)
         const { start, end } = selectionOrRange
         const startIndex = lines.indexForLocation({
@@ -206,6 +221,9 @@ const getIndexesForSelection = (
                 line: end.line,
                 column: end.character,
         })
+        if (startIndex === null || endIndex === null) {
+                throw new Error('Invalid selection range')
+        }
         return [startIndex, endIndex]
 }
 
@@ -301,21 +319,41 @@ const executeCodeAction = (
 
         paths.filter((path) => !isPathRemoved(path)).forEach((path) => {
                 const expression = codeFromNode(path.node)
-                let propName: string
+                let propName: string | undefined
                 let container: { property: string; object: string } | undefined
 
                 if (path.isMemberExpression()) {
                         if (isFunctionBinding(path)) {
                                 path = path.parentPath
-                                propName = path.node.callee.object.property.name
+                                if (
+                                        path.node.type === 'CallExpression' &&
+                                        path.node.callee.type ===
+                                                'MemberExpression' &&
+                                        path.node.callee.object.type ===
+                                                'MemberExpression' &&
+                                        path.node.callee.object.property.type ===
+                                                'Identifier'
+                                ) {
+                                        propName =
+                                                path.node.callee.object.property
+                                                        .name
+                                }
                         } else {
-                                propName = path.node.property.name
-                                container = objects.find((o) =>
-                                        expression.startsWith(o.object),
-                                )
+                                if (
+                                        path.node.property.type === 'Identifier'
+                                ) {
+                                        propName = path.node.property.name
+                                        container = objects.find((o) =>
+                                                expression.startsWith(o.object),
+                                        )
+                                }
                         }
-                } else {
+                } else if (path.node.type === 'Identifier') {
                         propName = path.node.name
+                }
+
+                if (!propName) {
+                        return
                 }
 
                 if (container) {
@@ -341,7 +379,7 @@ const executeCodeAction = (
 
         const extractedJSX = codeFromNode(selectedPath.node)
 
-        const functionTypeConfig: string = vscode.workspace
+        const functionTypeConfig: string | undefined = vscode.workspace
                 .getConfiguration()
                 .get('vscodeReactRefactor.functionType')
 
@@ -412,7 +450,7 @@ const findSelectedJSXElement = (ast: t.File, start: number, end: number) => {
 const getContainerObjects = (
         paths: NodePath[],
 ): { object: string; property: string }[] => {
-        let objectMap = {}
+        let objectMap: Record<string, number> = {}
         paths.filter(
                 (path) =>
                         (t.isMemberExpression(path.node) &&
@@ -434,11 +472,13 @@ const getContainerObjects = (
                         typeof val === 'number' &&
                         val > 1 &&
                         !isPropsObject(key),
-        )
+        ) as Record<string, number>
         objectMap = pickBy(
                 objectMap,
-                (_val, key) => !objectMap[key.slice(0, key.lastIndexOf('.'))],
-        )
+                (_val, key) =>
+                        !(objectMap[key.slice(0, key.lastIndexOf('.'))] !==
+                                undefined),
+        ) as Record<string, number>
         return Object.keys(objectMap).map((object) => ({
                 object,
                 property: object.slice(object.lastIndexOf('.') + 1),
@@ -479,7 +519,10 @@ const isPropsObject = (expressionCode: string) =>
         expressionCode === 'this.state' ||
         expressionCode === 'props'
 
-const createPropsExpression = (produceClass, propertyName: string) =>
+const createPropsExpression = (
+        produceClass: boolean,
+        propertyName: string,
+): t.MemberExpression =>
         produceClass
                 ? t.memberExpression(
                           t.memberExpression(
@@ -493,7 +536,10 @@ const createPropsExpression = (produceClass, propertyName: string) =>
                           t.identifier(propertyName),
                   )
 
-const createJSXElement = (name: string, attributes: Record<string, t.Node>) => {
+const createJSXElement = (
+        name: string,
+        attributes: Record<string, t.Node>,
+): t.JSXElement => {
         const jsxElement = t.jsxElement(
                 t.jsxOpeningElement(t.jsxIdentifier(name), []),
                 t.jsxClosingElement(t.jsxIdentifier(name)),
@@ -539,6 +585,7 @@ const copyAndRemoveKeyAttribute = (
         })
         if (
                 keyAttributePath &&
+                keyAttributePath.node.value &&
                 t.isJSXExpressionContainer(keyAttributePath.node.value)
         ) {
                 const value = t.cloneDeep(
@@ -547,4 +594,5 @@ const copyAndRemoveKeyAttribute = (
                 keyAttributePath.remove()
                 return value
         }
+        return undefined
 }

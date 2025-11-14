@@ -20,11 +20,12 @@ Refer to [CHANGELOG](CHANGELOG.md)
 
 ## Help to debug
 
-w
-
 ### Code Action doesn't appear when select JSX code
 
-If something doesn't work don't panic. Probably you use a language feature that is not recognized by the parser within your module (file). Now you get back an error message about what's going on. Use the new Babel plugins setting to configure it for your needs. See: <https://babeljs.io/docs/en/babel-parser#plugins>.
+If something doesn't work don't panic. Probably you use a language feature that
+is not recognized by the parser within your module (file). Now you get back an
+error message about what's going on. Use the new Babel plugins setting to
+configure it for your needs. See: <https://babeljs.io/docs/en/babel-parser#plugins>.
 
 If no luck please open an issue with
 
@@ -33,15 +34,8 @@ If no luck please open an issue with
 
 ### Refactoring happens but results broken code
 
-Please record an issue with the original code and the result after refactor executed.
-
-## CI/CD
-
-This extension uses GitHub Actions for automated building and publishing:
-
-- **Build**: Automatically builds and tests on every push/PR
-- **Publish**: Automatically publishes to VS Code Marketplace when version tags are pushed
-- **Releases**: Creates GitHub releases with packaged extension for Eclipse Marketplace
+Please record an issue with the original code and the result after refactor
+executed.
 
 ### Quick Publish Guide
 

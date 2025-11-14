@@ -56,7 +56,6 @@ const config = {
                                                 unsafe_proto: true,
                                         },
                                         format: {
-                                                beautify: false,
                                                 ecma: 2020,
                                         },
                                 },

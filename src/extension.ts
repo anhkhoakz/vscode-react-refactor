@@ -1,45 +1,41 @@
-import * as vscode from 'vscode'
-import * as extractJSX from './lib/code-actions/extract-jsx'
+/**
+ * VSCode Extension Entry Point
+ */
 
-export class CodeActionProvider implements vscode.CodeActionProvider {
-        public provideCodeActions(): vscode.Command[] {
-                const editor = vscode.window.activeTextEditor
-                if (!editor || editor.selection.isEmpty) {
-                        return []
-                }
-                const selectedText = editor.document.getText(editor.selection)
-                const codeActions = []
-                if (extractJSX.isCodeActionAvailable(selectedText)) {
-                        codeActions.push({
-                                command: 'extension.react-refactor.extractToFunction',
-                                title: 'Extract JSX to Functional Component',
-                        })
-                        codeActions.push({
-                                command: 'extension.react-refactor.extractToClass',
-                                title: 'Extract JSX to Class Component',
-                        })
-                }
-                return codeActions
-        }
-}
+import type * as vscode from 'vscode'
+import { registerExtractCommands } from './commands/extract-commands'
+import { bootstrap } from './core/bootstrap'
+import { ServiceKeys } from './core/di/container'
+import { CodeActionProvider } from './providers/code-action-provider'
+import type { RefactoringService } from './services/refactoring-service'
+import type { IVSCodeService } from './types'
 
-export const activate = (context: vscode.ExtensionContext) => {
+/**
+ * Extension activation function
+ */
+export const activate = (context: vscode.ExtensionContext): void => {
+        // Bootstrap dependency injection container
+        const container = bootstrap()
+
+        // Get services
+        const refactoringService = container.get<RefactoringService>(
+                'refactoring.service',
+        )
+        const vscodeService = container.get<IVSCodeService>(
+                ServiceKeys.VSCodeService,
+        )
+
+        // Register code actions provider
         context.subscriptions.push(
-                vscode.languages.registerCodeActionsProvider(
+                vscodeService.registerCodeActionsProvider(
                         { pattern: '**/*.{js,jsx,ts,tsx}', scheme: 'file' },
-                        new CodeActionProvider(),
+                        new CodeActionProvider(
+                                refactoringService,
+                                vscodeService,
+                        ),
                 ),
         )
-        context.subscriptions.push(
-                vscode.commands.registerCommand(
-                        'extension.react-refactor.extractToFunction',
-                        () => extractJSX.extractToComponent(),
-                ),
-        )
-        context.subscriptions.push(
-                vscode.commands.registerCommand(
-                        'extension.react-refactor.extractToClass',
-                        () => extractJSX.extractToComponent(true),
-                ),
-        )
+
+        // Register commands
+        registerExtractCommands(context, refactoringService, vscodeService)
 }

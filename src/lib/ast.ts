@@ -8,33 +8,45 @@ let _generate: typeof import('@babel/generator').default | null = null
 let _t: typeof import('@babel/types') | null = null
 
 // Lazy load Babel parser
-const getParser = () => {
+const getParser = (): typeof import('@babel/parser').parse => {
         if (!_parse) {
                 _parse = require('@babel/parser').parse
+        }
+        if (!_parse) {
+                throw new Error('Failed to load Babel parser')
         }
         return _parse
 }
 
 // Lazy load Babel template
-const getTemplate = () => {
+const getTemplate = (): typeof import('@babel/template').default => {
         if (!_template) {
                 _template = require('@babel/template').default
+        }
+        if (!_template) {
+                throw new Error('Failed to load Babel template')
         }
         return _template
 }
 
 // Lazy load Babel generator
-const getGenerator = () => {
+const getGenerator = (): typeof import('@babel/generator').default => {
         if (!_generate) {
                 _generate = require('@babel/generator').default
+        }
+        if (!_generate) {
+                throw new Error('Failed to load Babel generator')
         }
         return _generate
 }
 
 // Lazy load Babel types
-const getTypes = () => {
+const getTypes = (): typeof import('@babel/types') => {
         if (!_t) {
                 _t = require('@babel/types')
+        }
+        if (!_t) {
+                throw new Error('Failed to load Babel types')
         }
         return _t
 }
@@ -52,9 +64,12 @@ const AST_CACHE_TTL = 5000 // 5 seconds cache
 
 const getParserOptions = (): import('@babel/parser').ParserOptions => {
         const config = vscode.workspace.getConfiguration()
-        const pluginsConfig: string = config.get(
+        const pluginsConfig: string | undefined = config.get(
                 'vscodeReactRefactor.babelPlugins',
         )
+        if (!pluginsConfig) {
+                throw new Error('Babel plugins configuration not found')
+        }
 
         // Return cached options if config hasn't changed
         if (cachedParserOptions && cachedConfigKey === pluginsConfig) {
@@ -129,25 +144,40 @@ export const codeToAst = (code: string) => {
         return ast
 }
 
-export const jsxToAst = (code: string) => {
+export const jsxToAst = (
+        code: string,
+):
+        | import('@babel/types').Statement
+        | import('@babel/types').Statement[]
+        | false => {
         try {
                 return templateToAst(code)
         } catch (error) {
-                if (isDebugEnabled())
-                        vscode.window.showErrorMessage(error.message)
+                if (isDebugEnabled()) {
+                        const errorMessage =
+                                error instanceof Error
+                                        ? error.message
+                                        : String(error)
+                        vscode.window.showErrorMessage(errorMessage)
+                }
 
                 return false
         }
 }
 
-export const templateToAst = (code: string) => {
+export const templateToAst = (
+        code: string,
+): import('@babel/types').Statement | import('@babel/types').Statement[] => {
         const template = getTemplate()
         const options = getParserOptions()
         // template.ast only accepts plugins, not full parser options
         // Cast plugins to the expected type
-        return template.ast(code, {
+        const result = template.ast(code, {
                 plugins: options.plugins as import('@babel/template').TemplateBuilderOptions['plugins'],
         })
+        return result as
+                | import('@babel/types').Statement
+                | import('@babel/types').Statement[]
 }
 
 export const isJSX = (code: string) => {
@@ -202,26 +232,47 @@ export const codeFromNode = (node: import('@babel/types').Node) => {
         return astToCode(ast).slice(0, -1)
 }
 
-export const isOuterMemberExpression = (path) =>
+export const isOuterMemberExpression = (path: NodePath): boolean =>
         path.isMemberExpression() &&
         !isArrayFunctionCall(path) &&
-        (!path.parentPath.isMemberExpression() ||
+        (!path.parentPath?.isMemberExpression() ||
                 isArrayFunctionCall(path.parentPath))
 
-export const findOuterMemberExpression = (path) =>
+export const findOuterMemberExpression = (path: NodePath): NodePath =>
         path.findParent(isOuterMemberExpression) || path
 
-export const isArrayFunctionCall = (path) =>
+export const isArrayFunctionCall = (path: NodePath): boolean =>
         path.key === 'callee' &&
+        path.node.type === 'MemberExpression' &&
+        path.node.property.type === 'Identifier' &&
         ['map', 'filter', 'reduce'].indexOf(path.node.property.name) > -1
 
-export const isFunctionBinding = (path) =>
-        path.key === 'callee' && path.node.property.name === 'bind'
+export const isFunctionBinding = (path: NodePath): boolean =>
+        path.key === 'callee' &&
+        path.node.type === 'MemberExpression' &&
+        path.node.property.type === 'Identifier' &&
+        path.node.property.name === 'bind'
 
-export const isPathInRange = (start: number, end: number) => (path: NodePath) =>
-        path.node.start >= start && path.node.end <= end
+export const isPathInRange =
+        (start: number, end: number) =>
+        (path: NodePath): boolean => {
+                const nodeStart = path.node.start
+                const nodeEnd = path.node.end
+                return (
+                        nodeStart !== null &&
+                        nodeStart !== undefined &&
+                        nodeEnd !== null &&
+                        nodeEnd !== undefined &&
+                        nodeStart >= start &&
+                        nodeEnd <= end
+                )
+        }
 
-export const isClassMemberExpression = ({ node }) => {
+export const isClassMemberExpression = ({
+        node,
+}: {
+        node: import('@babel/types').Node
+}): boolean => {
         const t = getTypes()
         return (
                 t.isMemberExpression(node) &&
@@ -230,9 +281,13 @@ export const isClassMemberExpression = ({ node }) => {
         )
 }
 
-export const isPathRemoved = (path) => !!path.findParent((path) => path.removed)
+export const isPathRemoved = (path: NodePath): boolean =>
+        !!path.findParent((p) => p.removed)
 
-export const getReferencePaths = (scope, node) => {
+export const getReferencePaths = (
+        scope: import('@babel/traverse').Scope,
+        node: import('@babel/types').Identifier,
+): NodePath[] => {
         const bindings = scope.bindings[node.name]
         if (bindings?.referencePaths) {
                 return bindings.referencePaths
@@ -240,15 +295,24 @@ export const getReferencePaths = (scope, node) => {
         return []
 }
 
-export const getVariableReferences = (scope, declaration) => {
+export const getVariableReferences = (
+        scope: import('@babel/traverse').Scope,
+        declaration:
+                | import('@babel/types').Identifier
+                | import('@babel/types').Pattern,
+): NodePath[] => {
         const t = getTypes()
-        const refs = []
+        const refs: NodePath[] = []
         if (t.isIdentifier(declaration)) {
-                getReferencePaths(scope, declaration).forEach((path) => {
-                        if (path.node !== declaration) {
-                                refs.push(findOuterMemberExpression(path))
-                        }
-                })
+                getReferencePaths(scope, declaration).forEach(
+                        (path: NodePath) => {
+                                if (path.node !== declaration) {
+                                        refs.push(
+                                                findOuterMemberExpression(path),
+                                        )
+                                }
+                        },
+                )
         } else {
                 let nodes:
                         | (
@@ -280,18 +344,33 @@ export const getVariableReferences = (scope, declaration) => {
                                                 t.isPattern(node),
                                 )
                 } else if (t.isArrayPattern(declaration)) {
-                        nodes = declaration.elements
+                        const elements = declaration.elements.filter(
+                                (
+                                        el,
+                                ): el is
+                                        | import('@babel/types').Identifier
+                                        | import('@babel/types').Pattern
+                                        | import('@babel/types').RestElement =>
+                                        el !== null,
+                        )
+                        nodes = elements
                                 .map(
                                         (
                                                 id:
                                                         | import('@babel/types').Identifier
                                                         | import('@babel/types').Pattern
-                                                        | import('@babel/types').RestElement
-                                                        | null,
-                                        ) =>
-                                                t.isRestElement(id)
-                                                        ? id.argument
-                                                        : id,
+                                                        | import('@babel/types').RestElement,
+                                        ):
+                                                | import('@babel/types').Identifier
+                                                | import('@babel/types').Pattern
+                                                | null => {
+                                                if (t.isRestElement(id)) {
+                                                        return id.argument as
+                                                                | import('@babel/types').Identifier
+                                                                | import('@babel/types').Pattern
+                                                }
+                                                return id
+                                        },
                                 )
                                 .filter(
                                         (
@@ -306,17 +385,22 @@ export const getVariableReferences = (scope, declaration) => {
                 }
                 if (nodes) {
                         nodes.forEach((node) => {
-                                getReferencePaths(scope, node).forEach(
-                                        (path) => {
-                                                if (path.node !== node) {
-                                                        refs.push(
-                                                                findOuterMemberExpression(
-                                                                        path,
-                                                                ),
-                                                        )
-                                                }
-                                        },
-                                )
+                                if (t.isIdentifier(node)) {
+                                        getReferencePaths(scope, node).forEach(
+                                                (path: NodePath) => {
+                                                        if (
+                                                                path.node !==
+                                                                node
+                                                        ) {
+                                                                refs.push(
+                                                                        findOuterMemberExpression(
+                                                                                path,
+                                                                        ),
+                                                                )
+                                                        }
+                                                },
+                                        )
+                                }
                         })
                 }
         }
@@ -328,14 +412,17 @@ export const getVariableReferences = (scope, declaration) => {
  * @param componentPath
  * @param targetPath
  */
-export const findComponentMemberReferences = (componentPath, targetPath) => {
-        let paths = []
+export const findComponentMemberReferences = (
+        componentPath: NodePath,
+        targetPath: NodePath | null,
+): NodePath[] => {
+        let paths: NodePath[] = []
 
         const path = targetPath || componentPath
 
         if (componentPath.isClassDeclaration()) {
                 path.traverse({
-                        MemberExpression(path) {
+                        MemberExpression(path: NodePath) {
                                 if (
                                         isClassMemberExpression(path) &&
                                         isOuterMemberExpression(path)
@@ -347,8 +434,11 @@ export const findComponentMemberReferences = (componentPath, targetPath) => {
         } else {
                 const t = getTypes()
                 if (
+                        componentPath.isVariableDeclarator() &&
                         t.isArrowFunctionExpression(componentPath.node.init) &&
-                        componentPath.node.init.params[0]
+                        componentPath.node.init.params[0] &&
+                        (t.isIdentifier(componentPath.node.init.params[0]) ||
+                                t.isPattern(componentPath.node.init.params[0]))
                 ) {
                         paths = paths.concat(
                                 getVariableReferences(
@@ -357,8 +447,10 @@ export const findComponentMemberReferences = (componentPath, targetPath) => {
                                 ),
                         )
                 } else if (
-                        t.isFunctionDeclaration(componentPath.node) &&
-                        componentPath.node.params[0]
+                        componentPath.isFunctionDeclaration() &&
+                        componentPath.node.params[0] &&
+                        (t.isIdentifier(componentPath.node.params[0]) ||
+                                t.isPattern(componentPath.node.params[0]))
                 ) {
                         paths = paths.concat(
                                 getVariableReferences(
@@ -373,18 +465,37 @@ export const findComponentMemberReferences = (componentPath, targetPath) => {
                 path,
                 (parentPath: NodePath) => parentPath.isBlockStatement(),
                 (parentPath: NodePath) => {
+                        const t = getTypes()
                         parentPath.traverse({
-                                VariableDeclaration(path) {
-                                        path.node.declarations.forEach(
-                                                (declaration) => {
-                                                        paths = paths.concat(
-                                                                getVariableReferences(
-                                                                        parentPath.scope,
-                                                                        declaration.id,
-                                                                ),
-                                                        )
-                                                },
-                                        )
+                                VariableDeclaration(path: NodePath) {
+                                        if (
+                                                t.isVariableDeclaration(
+                                                        path.node,
+                                                )
+                                        ) {
+                                                path.node.declarations.forEach(
+                                                        (
+                                                                declaration: import('@babel/types').VariableDeclarator,
+                                                        ) => {
+                                                                if (
+                                                                        t.isIdentifier(
+                                                                                declaration.id,
+                                                                        ) ||
+                                                                        t.isPattern(
+                                                                                declaration.id,
+                                                                        )
+                                                                ) {
+                                                                        paths =
+                                                                                paths.concat(
+                                                                                        getVariableReferences(
+                                                                                                parentPath.scope,
+                                                                                                declaration.id,
+                                                                                        ),
+                                                                                )
+                                                                }
+                                                        },
+                                                )
+                                        }
                                 },
                         })
                 },
@@ -401,12 +512,17 @@ export const findComponentMemberReferences = (componentPath, targetPath) => {
                                 t.isFunctionDeclaration(parentPath.node)
                         ) {
                                 parentPath.node.params.forEach((param) => {
-                                        paths = paths.concat(
-                                                getVariableReferences(
-                                                        parentPath.scope,
-                                                        param,
-                                                ),
-                                        )
+                                        if (
+                                                t.isIdentifier(param) ||
+                                                t.isPattern(param)
+                                        ) {
+                                                paths = paths.concat(
+                                                        getVariableReferences(
+                                                                parentPath.scope,
+                                                                param,
+                                                        ),
+                                                )
+                                        }
                                 })
                         }
                 },
