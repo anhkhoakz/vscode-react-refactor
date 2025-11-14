@@ -8,7 +8,7 @@
         "author": "anhkhoakz",
         "keywords": ["react", "refactor", "tools"],
         "license": "ISC",
-        "version": "1.2.1F",
+        "version": "1.2.1",
         "engines": {
                 "vscode": "^1.99.0"
         },

@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## 1.2.1
+
+- Enhance Architecture & Code Quality refer to [TODO.md]
+
 ## 1.2.0
 
 - Migrated build system from npm to Bun for faster builds and better performance
